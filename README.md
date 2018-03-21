@@ -1,4 +1,7 @@
 # NN_Projects
+
+Repository where I intend to put code and other material, pertaining to Neural Networks and Deep Learning.
+
 https://www.analyticsvidhya.com/blog/2016/08/deep-learning-path/
 
 http://colah.github.io/posts/2014-07-NLP-RNNs-Representations/
