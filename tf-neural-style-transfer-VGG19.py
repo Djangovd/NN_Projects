@@ -14,20 +14,24 @@ Detailed description of the VGG network(s) can be found in:
 import os
 import sys
 import numpy as np
-import scipy
+import scipy.io
+import scipy.misc
+import imageio
 import tensorflow as tf
 import matplotlib.pyplot as plt
-from matplotlib.pyplot import imshow
-from PIL import image
+from matplotlib.pyplot import imshow, matshow
+from PIL import Image
 #% matplotlib inline
 
 ## Image specific settings
 # Folder for output images
 OUTPUT_DIR = 'output/'
 # Image used for style
-STYLE_IMG = 'images/'
+#STYLE_IMG = 'images/Dali_melting_clocks.jpg'
+STYLE_IMG = 'images/guernica.jpg'
 # Image containing the content
-CONTENT_IMG = 'images/'
+#CONTENT_IMG = 'images/Mirror_Queen.jpg'
+CONTENT_IMG = 'images/hongkong.jpg'
 # Image dimensions
 IMG_W = 800
 IMG_H = 600
@@ -99,29 +103,117 @@ def vgg_model(path_to_imagenet_file):
     graph = {}
     graph['input'] = tf.Variable(np.zeros((1, IMG_W, IMG_H, COLOR_CHAN)), dtype='float32')
     graph['conv1_1'] = _conv2d_relu(graph['input'], 0, 'conv1_1')
-    graph['conv1_2'] = _conv2d_relu(graph['input'], 2, 'conv1_2')
+    graph['conv1_2'] = _conv2d_relu(graph['conv1_1'], 2, 'conv1_2')
     graph['avgpool1'] = _avgpool(graph['conv1_2'])
     #graph['maxpool1'] = _maxpool(graph['conv1_2'])
-    graph['conv2_1'] = _conv2d_relu(graph['input'], 5, 'conv2_1')
-    graph['conv2_2'] = _conv2d_relu(graph['input'], 7, 'conv2_2')
+    graph['conv2_1'] = _conv2d_relu(graph['avgpool1'], 5, 'conv2_1')
+    graph['conv2_2'] = _conv2d_relu(graph['conv2_1'], 7, 'conv2_2')
     graph['avgpool2'] = _avgpool(graph['conv2_2'])
     #graph['maxpool2'] = _maxpool(graph['conv1_2'])
-    graph['conv3_1'] = _conv2d_relu(graph['input'], 10, 'conv3_1')
-    graph['conv3_2'] = _conv2d_relu(graph['input'], 12, 'conv3_2')
-    graph['conv3_3'] = _conv2d_relu(graph['input'], 14, 'conv3_3')
-    graph['conv3_4'] = _conv2d_relu(graph['input'], 16, 'conv3_4')
+    graph['conv3_1'] = _conv2d_relu(graph['avgpool2'], 10, 'conv3_1')
+    graph['conv3_2'] = _conv2d_relu(graph['conv3_1'], 12, 'conv3_2')
+    graph['conv3_3'] = _conv2d_relu(graph['conv3_2'], 14, 'conv3_3')
+    graph['conv3_4'] = _conv2d_relu(graph['conv3_3'], 16, 'conv3_4')
     graph['avgpool3'] = _avgpool(graph['conv3_4'])
     #graph['maxpool3'] = _maxpool(graph['conv3_4'])
-    graph['conv4_1'] = _conv2d_relu(graph['input'], 19, 'conv4_1')
-    graph['conv4_2'] = _conv2d_relu(graph['input'], 21, 'conv4_2')
-    graph['conv4_3'] = _conv2d_relu(graph['input'], 23, 'conv4_3')
-    graph['conv4_4'] = _conv2d_relu(graph['input'], 25, 'conv4_4')
+    graph['conv4_1'] = _conv2d_relu(graph['avgpool3'], 19, 'conv4_1')
+    graph['conv4_2'] = _conv2d_relu(graph['conv4_1'], 21, 'conv4_2')
+    graph['conv4_3'] = _conv2d_relu(graph['conv4_2'], 23, 'conv4_3')
+    graph['conv4_4'] = _conv2d_relu(graph['conv4_3'], 25, 'conv4_4')
     graph['avgpool4'] = _avgpool(graph['conv4_4'])
     #graph['maxpool4'] = _maxpool(graph['conv4_4'])
-    graph['conv5_1'] = _conv2d_relu(graph['input'], 28, 'conv5_1')
-    graph['conv5_2'] = _conv2d_relu(graph['input'], 30, 'conv5_2')
-    graph['conv5_3'] = _conv2d_relu(graph['input'], 32, 'conv5_3')
-    graph['conv5_4'] = _conv2d_relu(graph['input'], 34, 'conv5_4')
+    graph['conv5_1'] = _conv2d_relu(graph['avgpool4'], 28, 'conv5_1')
+    graph['conv5_2'] = _conv2d_relu(graph['conv5_1'], 30, 'conv5_2')
+    graph['conv5_3'] = _conv2d_relu(graph['conv5_2'], 32, 'conv5_3')
+    graph['conv5_4'] = _conv2d_relu(graph['conv5_3'], 34, 'conv5_4')
     graph['avgpool5'] = _avgpool(graph['conv5_4'])
     #graph['maxpool5'] = _maxpool(graph['conv5_4'])
     
+    return graph
+
+### Content loss, as described by EQN.1 
+def loss_func_content(sess, model):
+#   a wrapper of sorts
+    def content_loss(p, x):
+        # N = number of filters
+        N = p.shape[3]
+        # M = H x W of feature map
+        M = p.shape[1] * p.shape[2]
+        #return 1./2. * tf.reduce_sum(tf.pow(p - x, 2))
+        return (1./(4. * N * M)) * tf.reduce_sum(tf.pow(p - x, 2))
+    
+    return content_loss(sess.run(model['conv4_2']), model['conv4_2'])
+
+### Style loss, EQN.5. In contrast to content loss, which solely focused on layer
+#   conv4_2, style loss is taken over a much larger range from conv1_1 to conv5_1. 
+#   The idea is that the style loss captures input across the various layers, both 
+#   the more hard, basic features and the soft, refined ones.
+#   We begin by using the layers as described in the paper, and attach weights 
+#   corresponding to how much we want the features to count in each layer.
+
+STYLE_LAYERS = [('conv1_1', 0.5),('conv2_1', 1.),('conv3_1', 1.5),('conv4_1', 3.),('conv5_1', 4.)]
+
+def loss_func_style():
+    # We need a Gram matrix
+    def gram_matrix(F, N, M):
+        Ft = tf.reshape(F, (M, N))
+        return tf.matmul(tf.transpose(Ft),Ft)
+    
+    def style_loss(a, x):
+        # N = number of filters in layer l
+        N = a.shape[3]
+        # M = H x W of feature map (layer l)
+        M = a.shape[1] * a.shape[2]
+        # Style representation of original image
+        A = gram_matrix(a, N, M)
+        # Style representation of generated image
+        G = gram_matrix(x, N, M)
+        return  (1./(4. * N**2 * M**2)) * tf.reduce_sum(tf.pow(A - G, 2))
+    
+    E = [style_loss(sess.run(model[layer_name]), model[layer_name]) for layer_name, _ in STYLE_LAYERS]
+    W = [w for _, w in STYLE_LAYERS]
+    loss = sum([W[l]*E[l] for l in range(len(STYLE_LAYERS))])
+    return loss
+
+def noise_img_gen(content_image, noise_ratio = NOISE_RATIO):
+    # Noise image, resulting from intermixing content and white noise images at certain proportions
+    noise_img = np.random.uniform(-20, 20, (1, IMAGE_HEIGHT, IMAGE_WIDTH, COLOR_CHANNELS)).astype('float32')
+    # white noise from content representation: weighted average
+    input_img = noise_image * noise_ratio + content_image * (1. - noise_ratio)
+    return input_img
+
+def load_img(path):
+    img = scipy.misc.imread(path)
+#    img = imageio.imread(path)
+    img = np.reshape(img, ((1,)+img.shape))
+#    print("1) img = ", img)
+    img = img - MEAN_VALUES # Def. in the beginning
+#    print("2) img - MEAN = ", img)
+#    print ("3) img.shape = ", img.shape)
+#    print ("4) mean.shape = ", MEAN_VALUES.shape)
+#    print ("5) mean = ", MEAN_VALUES)
+    return img.astype('uint8')
+
+def save_img(path, img):
+    img = img + MEAN_VALUES
+    img = img[0] # remove 1st (useless) dimension
+    img = np.clip(img,0,255).astype('uint8') 
+    scipy.misc.imsave(path, img)
+    
+####
+    
+sess = tf.InteractiveSession()
+
+# Set content image
+print("Content")
+content_img = load_img(CONTENT_IMG)
+imshow(content_img[0])
+
+print("Style")
+style_img = load_img(STYLE_IMG)
+imshow(style_img[0])
+
+### Build the model
+print("Build model")
+model = vgg_model(VGG_MODEL)
+print(model)
