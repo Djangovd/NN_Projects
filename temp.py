@@ -13,6 +13,9 @@ import scipy.io as sio
 fl = open("el_crapo.txt", 'w')
 vgg = sio.loadmat('./imagenet-vgg-verydeep-19.mat')
 lay = vgg['layers']
-print (lay[0])
-fl.write(str(lay))
+#print (lay)
+for i in range(len(lay[0])):
+    st = "entry " + str(i) + " "+  str(lay[i])
+    fl.write(st)
+#fl.write(str(lay))
 fl.close()

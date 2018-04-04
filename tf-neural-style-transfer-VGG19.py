@@ -60,11 +60,23 @@ def vgg_model(path_to_imagenet_file):
 # define wrappers, which makes the code easier to read and work with
 
     def _weights(layer, expected_layer_name):
-        W = vgg_layers[0][layer][0][0][0][0][0]
-        b = vgg_layers[0][layer][0][0][0][0][1]
-        layer_name = vgg_layers[0][layer][0][0][-2]
+        wb = vgg_layers[0][layer][0][0][2]
+        W = wb[0][0]
+        b = wb[0][1]
+        layer_name = vgg_layers[0][layer][0][0][0][0]
         assert layer_name == expected_layer_name
         return W, b
+## Below was found in the tutorial but doesn't seem to correspond to the format of the imagenet .mat file
+#        W = vgg_layers[0][layer][0][0][0][0][0]
+#        print("weights : ", W)
+#        b = vgg_layers[0][layer][0][0][0][0][1]
+#        print("biases : ", b)
+#        #layer_name = vgg_layers[0][layer][0][0][-2] # Doesn't appear to be correct
+#        layer_name = vgg_layers[0][layer][0][0][0][0]
+#        print("layer_name: ", layer_name)
+#        print("expected_layer_name: ", expected_layer_name)
+#        assert layer_name == expected_layer_name
+#        return W, b
 
     def _relu(layer):
         return tf.nn.relu(layer)
@@ -101,7 +113,7 @@ def vgg_model(path_to_imagenet_file):
 # CNN with 16 convolutional layers, (ignoring the three fully connected (FC) layers, that normally follow)
 # See graph.readme for an overview
     graph = {}
-    graph['input'] = tf.Variable(np.zeros((1, IMG_W, IMG_H, COLOR_CHAN)), dtype='float32')
+    graph['input'] = tf.Variable(np.zeros((1, IMG_H, IMG_W, COLOR_CHAN)), dtype='float32')
     graph['conv1_1'] = _conv2d_relu(graph['input'], 0, 'conv1_1')
     graph['conv1_2'] = _conv2d_relu(graph['conv1_1'], 2, 'conv1_2')
     graph['avgpool1'] = _avgpool(graph['conv1_2'])
@@ -153,7 +165,7 @@ def loss_func_content(sess, model):
 
 STYLE_LAYERS = [('conv1_1', 0.5),('conv2_1', 1.),('conv3_1', 1.5),('conv4_1', 3.),('conv5_1', 4.)]
 
-def loss_func_style():
+def loss_func_style(sess, model):
     # We need a Gram matrix
     def gram_matrix(F, N, M):
         Ft = tf.reshape(F, (M, N))
@@ -175,12 +187,12 @@ def loss_func_style():
     loss = sum([W[l]*E[l] for l in range(len(STYLE_LAYERS))])
     return loss
 
-def noise_img_gen(content_image, noise_ratio = NOISE_RATIO):
+def noise_img_gen(content_img, noise_ratio = NOISE_RATIO):
     # Noise image, resulting from intermixing content and white noise images at certain proportions
-    noise_img = np.random.uniform(-20, 20, (1, IMAGE_HEIGHT, IMAGE_WIDTH, COLOR_CHANNELS)).astype('float32')
+    noise_img = np.random.uniform(-20, 20, (1, IMG_H, IMG_W, COLOR_CHAN)).astype('float32')
     # white noise from content representation: weighted average
-    input_img = noise_image * noise_ratio + content_image * (1. - noise_ratio)
-    return input_img
+    input_img = noise_img * noise_ratio + content_img * (1. - noise_ratio)
+    return input_img.astype('uint8')
 
 def load_img(path):
     img = scipy.misc.imread(path)
@@ -205,15 +217,65 @@ def save_img(path, img):
 sess = tf.InteractiveSession()
 
 # Set content image
-print("Content")
 content_img = load_img(CONTENT_IMG)
+print("Content", content_img.shape)
 imshow(content_img[0])
 
-print("Style")
+# Style image
 style_img = load_img(STYLE_IMG)
+print("Style", style_img.shape)
 imshow(style_img[0])
 
 ### Build the model
 print("Build model")
 model = vgg_model(VGG_MODEL)
 print(model)
+
+# input (noise) image
+input_img = noise_img_gen(content_img)
+print("Input", input_img.shape)
+imshow(input_img[0])
+
+## Init. of the model
+sess.run(tf.global_variables_initializer())
+
+## Construct content loss
+sess.run(model['input'].assign(content_img))
+content_loss = loss_func_content(sess, model)
+
+## Construct style loss
+sess.run(model['input'].assign(style_img))
+style_loss = loss_func_style(sess, model)
+
+## Combine into total loss (Eqn.7 in paper)
+total_loss = BETA * content_loss + ALPHA * style_loss
+
+#
+optimizer = tf.train.AdamOptimizer(2.0)
+train_step = optimizer.minimize(total_loss)
+
+sess.run(tf.global_variables_initializer())
+sess.run(model['input'].assign(input_img))
+
+## Time to train
+ITERS = 1000 #* 5
+
+sess.run(tf.global_variables_initializer())
+sess.run(model['input'].assign(input_img))
+for it in range(ITERS):
+    sess.run(train_step)
+    if it%100 == 0:
+        # Print every 100 iteration.
+        mixed_img = sess.run(model['input'])
+        print('Iteration %d' % (it))
+        print('sum : ', sess.run(tf.reduce_sum(mixed_img)))
+        print('cost: ', sess.run(total_loss))
+
+        if not os.path.exists(OUTPUT_DIR):
+            os.mkdir(OUTPUT_DIR)
+
+        filename = 'output/%d.png' % (it)
+        save_image(filename, mixed_img)
+
+save_img('output/art.jpg', mixed_img)
+
