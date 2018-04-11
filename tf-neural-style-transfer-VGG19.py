@@ -27,11 +27,11 @@ from PIL import Image
 # Folder for output images
 OUTPUT_DIR = 'output/'
 # Image used for style
-#STYLE_IMG = 'images/Dali_melting_clocks.jpg'
-STYLE_IMG = 'images/guernica.jpg'
+STYLE_IMG = 'images/Dali_melting_clocks.jpg'
+#STYLE_IMG = 'images/guernica.jpg'
 # Image containing the content
-#CONTENT_IMG = 'images/Mirror_Queen.jpg'
-CONTENT_IMG = 'images/hongkong.jpg'
+CONTENT_IMG = 'images/Mirror_Queen.jpg'
+#CONTENT_IMG = 'images/hongkong.jpg'
 # Image dimensions
 IMG_W = 800
 IMG_H = 600
@@ -275,7 +275,7 @@ for it in range(ITERS):
             os.mkdir(OUTPUT_DIR)
 
         filename = 'output/%d.png' % (it)
-        save_image(filename, mixed_img)
+        save_img(filename, mixed_img)
 
 save_img('output/art.jpg', mixed_img)
 
