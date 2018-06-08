@@ -61,16 +61,18 @@ with tf.Session() as sess:
         for batch in range(n_batches):
             X_train, y_train = mnist.train.next_batch(batch_size)
             X_train = X_train.reshape([-1, n_steps, n_inputs])
+            print("batch_size, n_epochs = ", batch_size, n_epochs)
             print("2 X_test = ", X_test)
             print("2 X_test shape:", X_test.shape)
             print("2 y_test = ", y_test, len(y_test))
             print("2 y_test shape:", y_test.shape)
             break
-            sess.run(optimizer, feed_dict={X: X_train, y: y_train})
-        loss_train, acc_train = sess.run(
-            [loss, accuracy], feed_dict={X: X_train, y: y_train})
-        print('Epoch: {}, Train Loss: {:.3f}, Train Acc: {:.3f}'.format(
-            epoch + 1, loss_train, acc_train))
-    loss_test, acc_test = sess.run(
-        [loss, accuracy], feed_dict={X: X_test, y: y_test})
-    print('Test Loss: {:.3f}, Test Acc: {:.3f}'.format(loss_test, acc_test))
+        break
+#            sess.run(optimizer, feed_dict={X: X_train, y: y_train})
+#        loss_train, acc_train = sess.run(
+#            [loss, accuracy], feed_dict={X: X_train, y: y_train})
+#        print('Epoch: {}, Train Loss: {:.3f}, Train Acc: {:.3f}'.format(
+#            epoch + 1, loss_train, acc_train))
+#    loss_test, acc_test = sess.run(
+#        [loss, accuracy], feed_dict={X: X_test, y: y_test})
+#    print('Test Loss: {:.3f}, Test Acc: {:.3f}'.format(loss_test, acc_test))
